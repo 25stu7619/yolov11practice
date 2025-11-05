@@ -991,7 +991,1096 @@ with open('results.json', 'w') as f:
 - [YOLOv11 GitHub](https://github.com/ultralytics/ultralytics)
 - [Ultralytics Hub](https://hub.ultralytics.com/)
 
+### 데이터셋 크기별 하이퍼파라미터
+
+#### 작은 데이터셋 (< 1000 이미지)
+
+```yaml
+# 과적합 방지에 중점
+lr0: 0.001              # 낮은 학습률
+epochs: 200             # 더 많은 에포크
+patience: 50            # 긴 patience
+dropout: 0.1            # Dropout 추가
+label_smoothing: 0.1    # 라벨 스무딩
+mosaic: 1.0
+mixup: 0.2              # MixUp 활성화
+copy_paste: 0.1
+# 강한 증강
+degrees: 15.0
+translate: 0.2
+scale: 0.5
+hsv_h: 0.02
+hsv_s: 0.8
+hsv_v: 0.5
+```
+
+#### 중간 데이터셋 (1000-10000 이미지)
+
+```yaml
+# 기본 설정 사용
+lr0: 0.01
+epochs: 100
+patience: 50
+mosaic: 1.0
+mixup: 0.0
+# 적당한 증강
+degrees: 0.0
+translate: 0.1
+scale: 0.5
+```
+
+#### 큰 데이터셋 (> 10000 이미지)
+
+```yaml
+# 빠른 수렴에 중점
+lr0: 0.01               # 표준 학습률
+epochs: 300             # 충분한 학습
+patience: 100
+mosaic: 1.0
+mixup: 0.0
+# 약한 증강 (데이터가 충분)
+degrees: 0.0
+translate: 0.1
+scale: 0.5
+close_mosaic: 10        # 마지막 10 에포크 mosaic 끄기
+```
+
+### 학습률 스케줄러
+
+```yaml
+# Linear warmup + Cosine annealing (기본)
+warmup_epochs: 3.0
+cos_lr: True            # Cosine LR scheduler
+
+# Linear warmup + Linear decay
+warmup_epochs: 3.0
+cos_lr: False
+
+# One-cycle policy
+optimizer: 'Adam'
+lr0: 0.001
+lrf: 0.1
+```
+
+---
+
+## 💡 Tips & Tricks
+
+### 1. 모델 선택 가이드
+
+#### 사용 케이스별 추천
+
+| 사용 케이스 | 추천 모델 | 이미지 크기 | 이유 |
+|------------|----------|-----------|------|
+| **라즈베리파이** | YOLOv11n | 320-416 | 최소 파라미터, CPU 최적화 |
+| **Jetson Nano** | YOLOv11n/s | 416-640 | 제한된 GPU 메모리 |
+| **Jetson Xavier** | YOLOv11s/m | 640 | 적절한 성능/속도 균형 |
+| **모바일 (iOS)** | YOLOv11s | 640 | CoreML 최적화 |
+| **모바일 (Android)** | YOLOv11s | 640 | TFLite INT8 |
+| **실시간 CCTV** | YOLOv11m | 640-1280 | 정확도와 속도 균형 |
+| **드론 영상** | YOLOv11s/m | 640 | 경량, 배터리 효율 |
+| **자율주행** | YOLOv11l/x | 1280 | 높은 정확도 필수 |
+| **의료 영상** | YOLOv11x | 1280 | 최고 정확도 |
+| **소매 분석** | YOLOv11m | 640 | 실시간 + 정확도 |
+| **스포츠 분석** | YOLOv11l | 1280 | 빠른 움직임 추적 |
+| **산업 검사** | YOLOv11l/x | 1280 | 정밀 탐지 필요 |
+| **얼굴 인식** | YOLOv11m | 640 | 중간 크기 객체 |
+| **차량 번호판** | YOLOv11l | 1280 | 작은 텍스트 읽기 |
+
+### 2. 성능 개선 전략
+
+#### 정확도 향상
+
+**1. 데이터 품질 개선**
+```python
+# 데이터 검증
+from ultralytics import YOLO
+
+model = YOLO('yolov11n.pt')
+
+# 데이터셋 분석
+model.val(data='custom.yaml', split='train')
+
+# 잘못된 라벨 찾기
+# - mAP가 매우 낮은 이미지
+# - 높은 FP/FN 이미지
+```
+
+**2. 더 큰 모델 사용**
+```python
+# n -> s -> m -> l -> x
+model = YOLO('yolov11x.pt')  # 최고 성능
+```
+
+**3. 더 큰 이미지 크기**
+```python
+model.train(
+    data='custom.yaml',
+    imgsz=1280,  # 기본 640에서 증가
+    epochs=100
+)
+```
+
+**4. 더 긴 학습**
+```python
+model.train(
+    data='custom.yaml',
+    epochs=300,   # 100에서 증가
+    patience=100  # 조기 종료 늦춤
+)
+```
+
+**5. 데이터 증강 강화**
+```python
+model.train(
+    data='custom.yaml',
+    epochs=100,
+    # 강한 증강
+    mosaic=1.0,
+    mixup=0.2,
+    copy_paste=0.1,
+    degrees=15.0,
+    translate=0.2,
+    scale=0.5,
+    hsv_h=0.02,
+    hsv_s=0.8,
+    hsv_v=0.5
+)
+```
+
+**6. 앙상블**
+```python
+from ultralytics import YOLO
+import numpy as np
+
+# 여러 모델 로드
+models = [
+    YOLO('yolov11m.pt'),
+    YOLO('yolov11l.pt'),
+    YOLO('yolov11x.pt')
+]
+
+# 결과 수집
+all_results = []
+for model in models:
+    results = model('image.jpg')
+    all_results.append(results[0].boxes)
+
+# NMS로 병합 (직접 구현 필요)
+# WBF (Weighted Boxes Fusion) 권장
+```
+
+#### 속도 향상
+
+**1. 더 작은 모델**
+```python
+model = YOLO('yolov11n.pt')  # 가장 빠름
+```
+
+**2. 더 작은 이미지**
+```python
+results = model('image.jpg', imgsz=416)  # 640 -> 416
+```
+
+**3. TensorRT 사용**
+```python
+# 내보내기
+model.export(format='engine', half=True)
+
+# 사용 (5-10배 빠름)
+trt_model = YOLO('yolov11n.engine')
+results = trt_model('image.jpg')
+```
+
+**4. 배치 처리**
+```python
+# 단일 처리
+for img in images:
+    results = model(img)  # 느림
+
+# 배치 처리
+results = model(images, batch=16)  # 빠름
+```
+
+**5. FP16 사용**
+```python
+results = model('image.jpg', half=True, device=0)
+```
+
+**6. NMS 최적화**
+```python
+results = model('image.jpg',
+                conf=0.5,      # 높은 임계값
+                iou=0.7,       # 높은 IoU
+                max_det=100)   # 최대 탐지 제한
+```
+
+### 3. 일반적인 문제 해결
+
+#### 문제: 낮은 mAP
+
+**원인 및 해결:**
+
+1. **데이터 부족**
+   - 해결: 클래스당 최소 1500개 이미지
+   - 데이터 증강 강화
+   - 온라인 데이터셋 추가
+
+2. **잘못된 라벨**
+   - 해결: 라벨 검증
+   - 경계 박스 정확도 확인
+   - 일관된 라벨링 기준
+
+3. **클래스 불균형**
+   - 해결: 클래스 가중치 조정
+   - 오버샘플링
+   - Focal Loss 사용
+
+4. **너무 짧은 학습**
+   - 해결: 더 많은 에포크
+   - patience 증가
+
+5. **부적절한 하이퍼파라미터**
+   - 해결: 학습률 조정
+   - 증강 파라미터 튜닝
+
+#### 문제: 과적합
+
+**증상:**
+- Train mAP 높음, Val mAP 낮음
+- Train loss 계속 감소, Val loss 증가
+
+**해결:**
+
+```python
+model.train(
+    data='custom.yaml',
+    epochs=100,
+    # 과적합 방지
+    dropout=0.1,
+    label_smoothing=0.1,
+    # 강한 증강
+    mosaic=1.0,
+    mixup=0.2,
+    degrees=15.0,
+    translate=0.2,
+    # 정규화
+    weight_decay=0.001,
+    # 더 작은 모델
+    model='yolov11s.pt'
+)
+```
+
+#### 문제: 학습이 수렴하지 않음
+
+**증상:**
+- Loss가 감소하지 않음
+- mAP가 매우 낮음
+
+**해결:**
+
+1. **학습률 낮추기**
+```python
+model.train(
+    data='custom.yaml',
+    lr0=0.001,  # 0.01에서 감소
+    lrf=0.001
+)
+```
+
+2. **워밍업 늘리기**
+```python
+model.train(
+    data='custom.yaml',
+    warmup_epochs=5.0  # 3.0에서 증가
+)
+```
+
+3. **배치 크기 증가**
+```python
+model.train(
+    data='custom.yaml',
+    batch=32  # 16에서 증가
+)
+```
+
+4. **데이터 확인**
+- 라벨 형식 검증
+- 경로 확인
+- 이미지 로드 테스트
+
+#### 문제: GPU 메모리 부족
+
+**해결:**
+
+```python
+# 1. 배치 크기 감소
+model.train(batch=8)  # 16 -> 8
+
+# 2. 이미지 크기 감소
+model.train(imgsz=416)  # 640 -> 416
+
+# 3. 더 작은 모델
+model = YOLO('yolov11n.pt')
+
+# 4. 그래디언트 누적 (구현 필요)
+# 5. 혼합 정밀도
+model.train(amp=True)
+
+# 6. 워커 수 감소
+model.train(workers=4)
+
+# 7. 캐시 비우기
+import torch
+torch.cuda.empty_cache()
+```
+
+#### 문제: 작은 객체 탐지 실패
+
+**해결:**
+
+```python
+model.train(
+    data='custom.yaml',
+    imgsz=1280,        # 더 큰 이미지
+    mosaic=1.0,        # Mosaic 활성화
+    copy_paste=0.1,    # Copy-paste
+    model='yolov11l.pt'  # 더 큰 모델
+)
+
+# 추론 시
+results = model('image.jpg',
+                imgsz=1280,
+                conf=0.3,      # 낮은 임계값
+                augment=True)  # TTA
+```
+
+### 4. 커스텀 데이터셋 준비 체크리스트
+
+**✅ 데이터 수집**
+- [ ] 클래스당 최소 1500개 이미지 (이상적으로 5000+)
+- [ ] 다양한 조명 조건
+- [ ] 다양한 각도와 거리
+- [ ] 다양한 배경
+- [ ] 실제 사용 환경과 유사
+
+**✅ 라벨링**
+- [ ] 일관된 라벨링 기준
+- [ ] 정확한 경계 박스
+- [ ] 겹치는 객체 처리
+- [ ] 부분적으로 가려진 객체 포함
+- [ ] 어려운 케이스 포함
+
+**✅ 데이터 분할**
+- [ ] Train: 70-80%
+- [ ] Validation: 10-20%
+- [ ] Test: 10-20%
+- [ ] 분할 후 클래스 분포 확인
+
+**✅ 형식 확인**
+- [ ] YOLO 형식 (class x y w h)
+- [ ] 정규화된 좌표 (0-1)
+- [ ] 파일명 일치 (image.jpg <-> image.txt)
+- [ ] YAML 파일 작성
+
+**✅ 검증**
+- [ ] 샘플 이미지 시각화
+- [ ] 라벨 정확도 확인
+- [ ] 클래스 분포 분석
+- [ ] 이상치 제거
+
+### 5. 프로덕션 배포 가이드
+
+#### 클라우드 배포 (AWS/GCP/Azure)
+
+**1. Docker 컨테이너**
+
+```dockerfile
+# Dockerfile
+FROM ultralytics/ultralytics:latest
+
+COPY yolov11n.pt /app/model.pt
+COPY app.py /app/app.py
+
+WORKDIR /app
+
+CMD ["python", "app.py"]
+```
+
+```python
+# app.py - Flask API
+from flask import Flask, request, jsonify
+from ultralytics import YOLO
+import cv2
+import numpy as np
+
+app = Flask(__name__)
+model = YOLO('model.pt')
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    file = request.files['image']
+    img = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
+    
+    results = model(img)
+    
+    # 결과 변환
+    detections = []
+    for box in results[0].boxes:
+        detections.append({
+            'class': model.names[int(box.cls[0])],
+            'confidence': float(box.conf[0]),
+            'bbox': box.xyxy[0].tolist()
+        })
+    
+    return jsonify(detections)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+```
+
+**2. FastAPI 서버**
+
+```python
+# main.py
+from fastapi import FastAPI, File, UploadFile
+from ultralytics import YOLO
+import cv2
+import numpy as np
+
+app = FastAPI()
+model = YOLO('yolov11n.pt')
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    contents = await file.read()
+    img = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+    
+    results = model(img)
+    
+    detections = []
+    for box in results[0].boxes:
+        detections.append({
+            'class': model.names[int(box.cls[0])],
+            'confidence': float(box.conf[0]),
+            'bbox': box.xyxy[0].tolist()
+        })
+    
+    return {"detections": detections}
+
+# 실행: uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+#### 엣지 디바이스 배포
+
+**1. Raspberry Pi**
+
+```python
+# rpi_inference.py
+from ultralytics import YOLO
+import cv2
+
+# TFLite 모델 사용 (CPU 최적화)
+model = YOLO('yolov11n.tflite')
+
+cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    # 추론
+    results = model(frame, imgsz=320)  # 작은 크기
+    
+    # 표시
+    annotated = results[0].plot()
+    cv2.imshow('YOLOv11', annotated)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+**2. NVIDIA Jetson**
+
+```python
+# jetson_inference.py
+from ultralytics import YOLO
+
+# TensorRT 엔진 사용 (GPU 가속)
+model = YOLO('yolov11n.engine')
+
+# 실시간 처리
+results = model(0, stream=True)  # 웹캠
+
+for result in results:
+    result.show()
+```
+
+#### 모바일 배포
+
+**iOS (Swift):**
+
+```swift
+import CoreML
+import Vision
+
+class YOLOv11Detector {
+    let model: VNCoreMLModel
+    
+    init() {
+        let mlModel = try! yolov11n()
+        self.model = try! VNCoreMLModel(for: mlModel.model)
+    }
+    
+    func detect(image: CGImage, completion: @escaping ([VNRecognizedObjectObservation]) -> Void) {
+        let request = VNCoreMLRequest(model: model) { request, error in
+            guard let results = request.results as? [VNRecognizedObjectObservation] else {
+                completion([])
+                return
+            }
+            completion(results)
+        }
+        
+        request.imageCropAndScaleOption = .scaleFill
+        
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try? handler.perform([request])
+    }
+}
+```
+
+**Android (Kotlin):**
+
+```kotlin
+import org.tensorflow.lite.Interpreter
+import java.nio.ByteBuffer
+
+class YOLOv11Detector(modelPath: String) {
+    private val interpreter: Interpreter
+    
+    init {
+        interpreter = Interpreter(File(modelPath))
+    }
+    
+    fun detect(bitmap: Bitmap): List<Detection> {
+        // 전처리
+        val input = preprocessImage(bitmap)
+        
+        // 추론
+        val output = Array(1) { Array(8400) { FloatArray(84) } }
+        interpreter.run(input, output)
+        
+        // 후처리
+        return postprocess(output[0])
+    }
+    
+    private fun preprocessImage(bitmap: Bitmap): ByteBuffer {
+        // 640x640으로 리사이즈 및 정규화
+        // ...
+    }
+    
+    private fun postprocess(output: Array<FloatArray>): List<Detection> {
+        // NMS 적용 및 Detection 객체 생성
+        // ...
+    }
+}
+```
+
+### 6. 실전 예제
+
+#### 예제 1: 실시간 교통 분석
+
+```python
+from ultralytics import YOLO
+import cv2
+from collections import defaultdict
+
+model = YOLO('yolov11m.pt')
+
+# 관심 영역 (ROI) 정의
+roi_line = [(300, 400), (900, 400)]
+
+# 카운터
+vehicle_count = defaultdict(int)
+tracked_ids = set()
+
+# 비디오 처리
+cap = cv2.VideoCapture('traffic.mp4')
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    # 추적 모드 (객체 ID 유지)
+    results = model.track(frame, persist=True, classes=[2, 3, 5, 7])  # car, motorcycle, bus, truck
+    
+    if results[0].boxes.id is not None:
+        boxes = results[0].boxes.xyxy.cpu()
+        track_ids = results[0].boxes.id.int().cpu().tolist()
+        classes = results[0].boxes.cls.int().cpu().tolist()
+        
+        for box, track_id, cls in zip(boxes, track_ids, classes):
+            x1, y1, x2, y2 = box
+            center_y = (y1 + y2) / 2
+            
+            # ROI 라인을 넘었는지 확인
+            if track_id not in tracked_ids and center_y > roi_line[0][1]:
+                vehicle_count[model.names[cls]] += 1
+                tracked_ids.add(track_id)
+    
+    # ROI 라인 그리기
+    cv2.line(frame, roi_line[0], roi_line[1], (0, 255, 0), 2)
+    
+    # 카운트 표시
+    y_offset = 30
+    for vehicle_type, count in vehicle_count.items():
+        cv2.putText(frame, f"{vehicle_type}: {count}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        y_offset += 40
+    
+    cv2.imshow('Traffic Analysis', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+#### 예제 2: PPE (개인 보호 장비) 감지
+
+```python
+from ultralytics import YOLO
+import cv2
+
+# 커스텀 PPE 모델
+model = YOLO('ppe_yolov11m.pt')  # 헬멧, 조끼, 안전화 등
+
+# 클래스 정의
+REQUIRED_PPE = ['helmet', 'vest', 'safety_shoes']
+ALERT_THRESHOLD = 0.5
+
+def check_ppe_compliance(results, frame):
+    """PPE 착용 여부 확인"""
+    detected_ppe = set()
+    non_compliant = False
+    
+    for box in results[0].boxes:
+        cls = int(box.cls[0])
+        class_name = model.names[cls]
+        conf = float(box.conf[0])
+        
+        if conf > ALERT_THRESHOLD:
+            detected_ppe.add(class_name)
+            
+            # 박스 그리기
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            color = (0, 255, 0) if class_name in REQUIRED_PPE else (0, 0, 255)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(frame, f"{class_name} {conf:.2f}", (x1, y1-10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    
+    # 미착용 항목 확인
+    missing_ppe = set(REQUIRED_PPE) - detected_ppe
+    if missing_ppe:
+        non_compliant = True
+        warning = f"WARNING: Missing {', '.join(missing_ppe)}"
+        cv2.putText(frame, warning, (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+    
+    return frame, non_compliant
+
+# 비디오 처리
+cap = cv2.VideoCapture('construction_site.mp4')
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    results = model(frame)
+    annotated_frame, alert = check_ppe_compliance(results, frame)
+    
+    if alert:
+        # 알림 전송 (이메일, SMS 등)
+        pass
+    
+    cv2.imshow('PPE Detection', annotated_frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+#### 예제 3: 얼굴 감지 및 블러 처리 (프라이버시)
+
+```python
+from ultralytics import YOLO
+import cv2
+
+model = YOLO('yolov11n.pt')
+
+def blur_faces(frame, results):
+    """얼굴 영역 블러 처리"""
+    for box in results[0].boxes:
+        cls = int(box.cls[0])
+        
+        # 사람(class 0)만 처리
+        if cls == 0:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            
+            # 얼굴 영역 추정 (상체 상단 1/3)
+            face_h = (y2 - y1) // 3
+            face_region = frame[y1:y1+face_h, x1:x2]
+            
+            # 블러 적용
+            if face_region.size > 0:
+                blurred = cv2.GaussianBlur(face_region, (99, 99), 30)
+                frame[y1:y1+face_h, x1:x2] = blurred
+    
+    return frame
+
+# 비디오 처리
+cap = cv2.VideoCapture('input.mp4')
+out = cv2.VideoWriter('output_blurred.mp4', 
+                      cv2.VideoWriter_fourcc(*'mp4v'),
+                      30, 
+                      (int(cap.get(3)), int(cap.get(4))))
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    results = model(frame, classes=[0])  # person만
+    blurred_frame = blur_faces(frame, results)
+    
+    out.write(blurred_frame)
+    cv2.imshow('Privacy Protection', blurred_frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+out.release()
+cv2.destroyAllWindows()
+```
+
+---
+
+## ❓ FAQ
+
+### Q1: YOLOv11과 YOLOv8의 차이점은?
+**A:** YOLOv11은 YOLOv8 대비:
+- 파라미터 19-22% 감소
+- mAP 2-3% 향상
+- 추론 속도 약 22% 개선
+- 새로운 C3k2, C2PSA 모듈 도입
+- API는 동일하여 쉬운 마이그레이션
+
+### Q2: 커스텀 데이터셋으로 학습하는 방법은?
+**A:** 
+1. YOLO 형식으로 데이터 준비 (images/, labels/)
+2. YAML 파일 작성 (경로, 클래스 정의)
+3. `model.train(data='custom.yaml')` 실행
+4. 최소 클래스당 1500개 이미지 권장
+
+### Q3: 어떤 모델 크기를 선택해야 하나요?
+**A:**
+- **실시간/모바일**: YOLOv11n 또는 YOLOv11s
+- **일반 용도**: YOLOv11m
+- **높은 정확도**: YOLOv11l 또는 YOLOv11x
+- **엣지 디바이스**: YOLOv11n + INT8 양자화
+
+### Q4: GPU 메모리 부족 오류가 발생합니다.
+**A:** 
+```python
+# 해결 방법:
+model.train(
+    batch=8,    # 배치 크기 감소 (16 -> 8)
+    imgsz=416,  # 이미지 크기 감소 (640 -> 416)
+    workers=4,  # 워커 수 감소
+    amp=True    # Mixed Precision
+)
+```
+
+### Q5: 학습 속도를 높이는 방법은?
+**A:**
+- 다중 GPU 사용: `device=[0,1,2,3]`
+- Mixed Precision: `amp=True`
+- 더 큰 배치: `batch=32` (GPU 허용 시)
+- 더 많은 워커: `workers=16`
+- 더 작은 이미지: `imgsz=416`
+
+### Q6: 작은 객체 탐지를 개선하려면?
+**A:**
+```python
+model.train(
+    imgsz=1280,        # 더 큰 이미지
+    mosaic=1.0,        # Mosaic 증강
+    copy_paste=0.1,    # Copy-paste
+    model='yolov11l.pt'  # 더 큰 모델
+)
+
+# 추론 시
+results = model('image.jpg', imgsz=1280, conf=0.3)
+```
+
+### Q7: 모델을 모바일 기기에 배포하려면?
+**A:**
+```python
+# iOS
+model.export(format='coreml', int8=True)
+
+# Android
+model.export(format='tflite', int8=True)
+
+# 크기: PyTorch (10MB) -> TFLite INT8 (2.5MB)
+```
+
+### Q8: 추론 결과를 JSON으로 저장하려면?
+**A:**
+```python
+results = model('image.jpg')
+json_data = results[0].tojson()
+
+import json
+with open('results.json', 'w') as f:
+    json.dump(json.loads(json_data), f, indent=2)
+```
+
+### Q9: 특정 클래스만 학습할 수 있나요?
+**A:** 네, YAML 파일에서 원하는 클래스만 정의하면 됩니다:
+```yaml
+names:
+  0: person
+  1: car
+nc: 2
+```
+
+### Q10: 전이 학습 vs 처음부터 학습?
+**A:** **항상 전이 학습 권장!**
+```python
+# 전이 학습 (권장)
+model = YOLO('yolov11n.pt')
+model.train(data='custom.yaml')
+
+# 처음부터 (비권장)
+model = YOLO('yolov11n.yaml')  # 구조만
+model.train(data='custom.yaml', epochs=500)
+```
+
+### Q11: 학습 중 과적합을 방지하려면?
+**A:**
+```python
+model.train(
+    data='custom.yaml',
+    dropout=0.1,
+    label_smoothing=0.1,
+    mosaic=1.0,
+    mixup=0.2,
+    weight_decay=0.001,
+    patience=30
+)
+```
+
+### Q12: 여러 GPU로 학습하는 방법은?
+**A:**
+```bash
+# DDP (권장)
+yolo detect train data=custom.yaml model=yolov11n.pt device=0,1,2,3
+
+# 또는 Python
+model.train(data='custom.yaml', device=[0,1,2,3])
+```
+
+### Q13: 학습을 재개하려면?
+**A:**
+```python
+# 자동 재개
+model = YOLO('runs/detect/train/weights/last.pt')
+model.train(resume=True)
+```
+
+### Q14: 탐지 신뢰도를 높이려면?
+**A:**
+```python
+# 신뢰도 임계값 조정
+results = model('image.jpg', conf=0.7)  # 기본 0.25
+
+# NMS IoU 조정
+results = model('image.jpg', conf=0.5, iou=0.7)
+```
+
+### Q15: YOLOv11로 영상 추적이 가능한가요?
+**A:** 네!
+```python
+# 객체 추적 (BoT-SORT, ByteTrack)
+results = model.track('video.mp4', persist=True)
+
+for result in results:
+    if result.boxes.id is not None:
+        track_ids = result.boxes.id.int().cpu().tolist()
+        # ID별 추적 처리
+```
+
+---
+
+## 📚 참고 자료
+
+### 공식 문서
+- [Ultralytics 공식 문서](https://docs.ultralytics.com/)
+- [YOLOv11 GitHub](https://github.com/ultralytics/ultralytics)
+- [Ultralytics Hub](https://hub.ultralytics.com/)
+- [API Reference](https://docs.ultralytics.com/reference/)
+
 ### 데이터셋
+- [COCO Dataset](https://cocodataset.org/)
+- [Open Images](https://storage.googleapis.com/openimages/web/index.html)
+- [Roboflow Universe](https://universe.roboflow.com/)
+- [ImageNet](https://www.image-net.org/)
+- [Pascal VOC](http://host.robots.ox.ac.uk/pascal/VOC/)
+
+### 튜토리얼 및 가이드
+- [YOLOv11 Quick Start](https://docs.ultralytics.com/quickstart/)
+- [Custom Training Guide](https://docs.ultralytics.com/modes/train/)
+- [Model Export Guide](https://docs.ultralytics.com/modes/export/)
+- [Prediction Guide](https://docs.ultralytics.com/modes/predict/)
+- [Validation Guide](https://docs.ultralytics.com/modes/val/)
+
+### 라벨링 도구
+- [Roboflow](https://roboflow.com/) - 웹 기반, 자동 변환
+- [Label Studio](https://labelstud.io/) - 오픈소스
+- [CVAT](https://www.cvat.ai/) - 비디오 지원
+- [LabelImg](https://github.com/HumanSignal/labelImg) - 간단한 데스크톱
+- [Makesense.ai](https://www.makesense.ai/) - 온라인 무료
+
+### 커뮤니티
+- [Ultralytics Discord](https://discord.gg/ultralytics)
+- [GitHub Discussions](https://github.com/ultralytics/ultralytics/discussions)
+- [Stack Overflow - YOLO](https://stackoverflow.com/questions/tagged/yolo)
+- [Reddit r/computervision](https://www.reddit.com/r/computervision/)
+
+### 논문 및 연구
+- [YOLOv11 Technical Report](https://docs.ultralytics.com/) (출시 예정)
+- [YOLOv8 Paper](https://arxiv.org/abs/...)
+- [YOLOv7](https://arxiv.org/abs/2207.02696)
+- [YOLO Series Overview](https://arxiv.org/search/?query=YOLO&searchtype=all)
+
+### 블로그 및 기사
+- [Ultralytics Blog](https://www.ultralytics.com/blog)
+- [Roboflow Blog - YOLO](https://blog.roboflow.com/tag/yolo/)
+- [Towards Data Science - YOLO](https://towardsdatascience.com/tagged/yolo)
+
+### 비디오 튜토리얼
+- [Ultralytics YouTube](https://www.youtube.com/ultralytics)
+- [YOLOv11 Tutorial Playlist](https://www.youtube.com/playlist?list=...)
+
+### 도구 및 라이브러리
+- [PyTorch](https://pytorch.org/)
+- [OpenCV](https://opencv.org/)
+- [TensorRT](https://developer.nvidia.com/tensorrt)
+- [ONNX](https://onnx.ai/)
+- [CoreML Tools](https://github.com/apple/coremltools)
+
+---
+
+## 📝 라이선스
+
+YOLOv11은 두 가지 라이선스로 제공됩니다:
+
+### AGPL-3.0 License
+- **오픈소스 사용**: 무료
+- **조건**: 소스 코드 공개 필요
+- **용도**: 연구, 교육, 개인 프로젝트
+
+### Enterprise License
+- **상업적 사용**: 유료
+- **조건**: 소스 코드 비공개 가능
+- **용도**: 상업 제품, SaaS, 클로즈드 소스
+
+자세한 내용은 [Ultralytics 라이선스 페이지](https://ultralytics.com/license)를 참조하세요.
+
+---
+
+## 🤝 기여
+
+기여는 언제나 환영합니다!
+
+### 기여 방법
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing`)
+5. Open a Pull Request
+
+### 코드 스타일
+- PEP 8 준수
+- 타입 힌트 사용
+- Docstring 작성
+- 테스트 코드 포함
+
+### 이슈 리포팅
+- [GitHub Issues](https://github.com/ultralytics/ultralytics/issues)
+- 명확한 제목과 설명
+- 재현 가능한 예제
+- 환경 정보 (OS, Python, PyTorch 버전)
+
+---
+
+## 🙏 감사의 말
+
+이 프로젝트는 다음 분들의 기여로 만들어졌습니다:
+- Ultralytics 팀
+- YOLO 커뮤니티
+- 오픈소스 기여자들
+
+---
+
+## 📧 문의
+
+- **Email**: hello@ultralytics.com
+- **GitHub**: [ultralytics/ultralytics](https://github.com/ultralytics/ultralytics)
+- **Discord**: [Ultralytics 커뮤니티](https://discord.gg/ultralytics)
+- **Twitter**: [@ultralytics](https://twitter.com/ultralytics)
+- **LinkedIn**: [Ultralytics](https://www.linkedin.com/company/ultralytics/)
+
+---
+
+## 📈 업데이트 로그
+
+### v1.0.0 (2024-11)
+- YOLOv11 완전 가이드 초판 작성
+- YOLOv8 비교 추가
+- 용어 정리 추가
+- 실전 예제 추가
+
+---
+
+<div align="center">
+
+**마지막 업데이트**: 2024년 11월
+
+**제작**: Ultralytics
+
+**버전**: YOLOv11 (2024)
+
+---
+
+Made with ❤️ by the Ultralytics Team
+
+[⬆ 맨 위로](#yolov11-완전-가이드-complete-guide)
+
+</div>셋
 - [COCO Dataset](https://cocodataset.org/)
 - [Open Images](https://storage.googleapis.com/openimages/web/index.html)
 - [Roboflow Universe](https://universe.roboflow.com/)
@@ -1042,214 +2131,3 @@ YOLOv11은 두 가지 라이선스로 제공됩니다:
 **제작**: Ultralytics
 
 **버전**: YOLOv11 (2024)
-# YOLOv11 vs YOLOv8 비교 및 용어 정리
-
-## 📊 YOLOv11 vs YOLOv8 주요 차이점
-
-| 구분 | YOLOv8 | YOLOv11 | 개선사항 |
-|------|--------|---------|----------|
-| **출시일** | 2023년 1월 | 2024년 9월 | - |
-| **백본 구조** | CSPDarknet with C2f | C3k2, C2PSA | 더 효율적인 특징 추출 |
-| **파라미터 수 (N)** | 3.2M | 2.6M | 약 19% 감소 |
-| **파라미터 수 (S)** | 11.2M | 9.4M | 약 16% 감소 |
-| **파라미터 수 (M)** | 25.9M | 20.1M | 약 22% 감소 |
-| **mAP (N)** | 37.3% | 39.5% | +2.2% 향상 |
-| **mAP (S)** | 44.9% | 47.0% | +2.1% 향상 |
-| **mAP (M)** | 50.2% | 51.5% | +1.3% 향상 |
-| **추론 속도** | 기준 | 약 22% 빠름 | 속도 개선 |
-| **Neck 구조** | PAN (Path Aggregation Network) | C2PSA 기반 개선된 구조 | 다중 스케일 특징 융합 강화 |
-| **Head 구조** | Decoupled Head | Decoupled Head (개선) | 분류/회귀 분리 최적화 |
-| **학습 안정성** | 양호 | 개선됨 | 더 안정적인 수렴 |
-
-## 🏆 성능 비교 (COCO Dataset)
-
-### 모델별 상세 비교
-
-| 모델 | 파라미터 | FLOPs | mAP50-95 | 속도 (ms) | 용도 |
-|------|----------|-------|----------|-----------|------|
-| **YOLOv8n** | 3.2M | 8.7G | 37.3% | 1.2 | 경량 엣지 디바이스 |
-| **YOLOv11n** | 2.6M | 6.5G | 39.5% | 1.0 | 경량 엣지 디바이스 (개선) |
-| **YOLOv8s** | 11.2M | 28.6G | 44.9% | 2.1 | 모바일/임베디드 |
-| **YOLOv11s** | 9.4M | 21.5G | 47.0% | 1.7 | 모바일/임베디드 (개선) |
-| **YOLOv8m** | 25.9M | 78.9G | 50.2% | 3.6 | 일반 용도 |
-| **YOLOv11m** | 20.1M | 68.0G | 51.5% | 2.9 | 일반 용도 (개선) |
-| **YOLOv8l** | 43.7M | 165.2G | 52.9% | 5.5 | 고성능 |
-| **YOLOv11l** | 25.3M | 86.9G | 53.4% | 4.1 | 고성능 (경량화) |
-| **YOLOv8x** | 68.2M | 257.8G | 53.9% | 7.8 | 최고 성능 |
-| **YOLOv11x** | 56.9M | 194.9G | 54.7% | 6.5 | 최고 성능 (최적화) |
-
-*속도는 NVIDIA T4 GPU 기준*
-
-## 🔧 주요 아키텍처 개선사항
-
-### 1. C3k2 모듈
-- **YOLOv8**: C2f (CSP Bottleneck with 2 convolutions)
-- **YOLOv11**: C3k2 (개선된 CSP 구조)
-- **특징**: 더 효율적인 특징 추출, 파라미터 감소
-
-### 2. C2PSA (C2 with Partial Self-Attention)
-- **새로운 어텐션 메커니즘** 도입
-- **부분 Self-Attention**으로 계산량 감소
-- **장거리 의존성** 모델링 개선
-
-### 3. SPPF (Spatial Pyramid Pooling - Fast)
-- 두 모델 모두 사용하지만, YOLOv11에서 최적화
-
----
-
-## 📚 YOLO 용어 정리
-
-### 기본 개념
-
-| 용어 | 설명 | 예시/참고 |
-|------|------|-----------|
-| **Object Detection** | 이미지에서 객체의 위치(bbox)와 클래스를 동시에 예측 | 사람, 자동차, 고양이 탐지 |
-| **Bounding Box (BBox)** | 객체를 둘러싸는 직사각형 영역 | (x, y, width, height) |
-| **IoU** | Intersection over Union, 예측 박스와 정답 박스의 겹침 비율 | 0.0 ~ 1.0 값 |
-| **NMS** | Non-Maximum Suppression, 중복 박스 제거 | IoU 임계값 기반 |
-| **Anchor Box** | 사전 정의된 박스 크기/비율 (YOLOv5 이하) | YOLOv8+는 Anchor-Free |
-| **Anchor-Free** | 앵커 박스 없이 직접 객체 위치 예측 | YOLOv8, YOLOv11 |
-
-### 성능 지표
-
-| 용어 | 설명 | 계산 방법 |
-|------|------|-----------|
-| **Precision** | 예측한 객체 중 실제 객체의 비율 | TP / (TP + FP) |
-| **Recall** | 실제 객체 중 정확히 탐지한 비율 | TP / (TP + FN) |
-| **mAP** | mean Average Precision, 모든 클래스의 AP 평균 | Σ AP / 클래스 수 |
-| **mAP50** | IoU 0.5 기준의 mAP | PASCAL VOC 방식 |
-| **mAP50-95** | IoU 0.5~0.95의 mAP 평균 | COCO 방식 (더 엄격) |
-| **FPS** | Frames Per Second, 초당 처리 프레임 수 | 1000 / inference_time(ms) |
-| **Latency** | 단일 이미지 추론 시간 | 밀리초(ms) 단위 |
-
-### 모델 구조 용어
-
-| 용어 | 설명 | 역할 |
-|------|------|------|
-| **Backbone** | 입력 이미지에서 특징을 추출하는 네트워크 | CSPDarknet, C3k2 등 |
-| **Neck** | 다양한 스케일의 특징을 융합 | PAN, FPN, C2PSA |
-| **Head** | 최종 탐지 결과를 출력 | 클래스 분류 + BBox 회귀 |
-| **CSP** | Cross Stage Partial, 특징맵을 분할하여 처리 | 계산량 감소 |
-| **PAN** | Path Aggregation Network | Bottom-up 경로 추가 |
-| **FPN** | Feature Pyramid Network | Top-down 특징 융합 |
-| **SPPF** | Spatial Pyramid Pooling Fast | 다중 스케일 풀링 |
-
-### 학습 관련 용어
-
-| 용어 | 설명 | 기본값 예시 |
-|------|------|-------------|
-| **Epoch** | 전체 데이터셋을 한 번 학습 | 100~300 epochs |
-| **Batch Size** | 한 번에 처리하는 이미지 수 | 16, 32, 64 |
-| **Learning Rate** | 가중치 업데이트 크기 | 0.01 (초기값) |
-| **Image Size** | 입력 이미지 크기 | 640x640 (기본) |
-| **Augmentation** | 데이터 증강 기법 | Mosaic, Flip, Scale 등 |
-| **Mosaic** | 4개 이미지를 하나로 합성 | YOLOv4에서 도입 |
-| **MixUp** | 두 이미지를 혼합 | 일반화 성능 향상 |
-| **Warmup** | 초기 학습률을 점진적으로 증가 | 처음 3 epochs |
-
-### 손실 함수 (Loss Functions)
-
-| 용어 | 설명 | 용도 |
-|------|------|------|
-| **CIoU Loss** | Complete IoU Loss | BBox 회귀 |
-| **DFL** | Distribution Focal Loss | 박스 정밀도 개선 |
-| **BCE Loss** | Binary Cross Entropy | 클래스 분류 |
-| **Focal Loss** | 클래스 불균형 해결 | 어려운 샘플에 집중 |
-
-### 배포 및 최적화
-
-| 용어 | 설명 | 장점 |
-|------|------|------|
-| **ONNX** | Open Neural Network Exchange | 프레임워크 독립적 |
-| **TensorRT** | NVIDIA의 추론 최적화 엔진 | GPU 가속 |
-| **OpenVINO** | Intel의 추론 최적화 | CPU 최적화 |
-| **CoreML** | Apple의 ML 프레임워크 | iOS/macOS 배포 |
-| **TFLite** | TensorFlow Lite | 모바일/임베디드 |
-| **INT8 Quantization** | 8비트 정수로 양자화 | 모델 크기/속도 개선 |
-| **FP16** | 16비트 부동소수점 | 정확도 유지하며 경량화 |
-
-### 데이터셋 형식
-
-| 용어 | 설명 | 사용처 |
-|------|------|--------|
-| **COCO Format** | JSON 기반 어노테이션 | MS COCO 데이터셋 |
-| **YOLO Format** | 텍스트 기반 (class x y w h) | YOLO 시리즈 학습 |
-| **Pascal VOC** | XML 기반 어노테이션 | VOC 데이터셋 |
-| **Labelme** | JSON 어노테이션 도구 | 커스텀 데이터셋 제작 |
-
-### 모델 변형
-
-| 변형 | 설명 | 특징 |
-|------|------|------|
-| **n (nano)** | 가장 작은 모델 | 엣지 디바이스 |
-| **s (small)** | 소형 모델 | 모바일 |
-| **m (medium)** | 중형 모델 | 일반 용도 |
-| **l (large)** | 대형 모델 | 고성능 요구 |
-| **x (xlarge)** | 최대 모델 | 최고 정확도 |
-| **-seg** | Segmentation 모델 | Instance Segmentation |
-| **-pose** | Pose Estimation 모델 | 키포인트 탐지 |
-| **-cls** | Classification 모델 | 이미지 분류 |
-
----
-
-## 🎯 YOLOv11 선택 가이드
-
-### 사용 케이스별 추천
-
-| 사용 케이스 | 추천 모델 | 이유 |
-|------------|----------|------|
-| **라즈베리파이, Jetson Nano** | YOLOv11n | 최소 파라미터, 빠른 추론 |
-| **모바일 앱 (iOS/Android)** | YOLOv11s | 정확도와 속도 균형 |
-| **실시간 CCTV 분석** | YOLOv11m | 적절한 정확도, 실시간 가능 |
-| **드론 영상 분석** | YOLOv11s/m | 경량, 배터리 효율적 |
-| **자율주행 (고성능)** | YOLOv11l/x | 높은 정확도 요구 |
-| **산업 검사 (품질관리)** | YOLOv11m/l | 정밀한 탐지 필요 |
-| **의료 영상 분석** | YOLOv11x | 최고 정확도 |
-
-### YOLOv8에서 YOLOv11로 마이그레이션
-
-```python
-# YOLOv8 코드
-from ultralytics import YOLO
-model = YOLO('yolov8n.pt')
-
-# YOLOv11 코드 (동일한 API!)
-from ultralytics import YOLO
-model = YOLO('yolov11n.pt')
-
-# 사용법은 완전히 동일
-results = model('image.jpg')
-```
-
-**주요 변경사항:**
-- API는 동일 (Ultralytics 통합)
-- 모델 가중치만 변경: `yolov8n.pt` → `yolov11n.pt`
-- 하이퍼파라미터 조정 권장 (학습률, augmentation 등)
-
----
-
-## 📈 선택 기준
-
-### YOLOv11을 선택해야 하는 경우:
-✅ 최신 성능이 필요할 때  
-✅ 파라미터 효율성이 중요할 때  
-✅ 실시간 추론 속도가 중요할 때  
-✅ 엣지 디바이스 배포 시  
-
-### YOLOv8을 유지해야 하는 경우:
-✅ 이미 YOLOv8로 잘 작동하는 시스템이 있을 때  
-✅ 검증된 안정성이 필요할 때  
-✅ 특정 프레임워크와의 호환성 문제가 있을 때  
-
----
-
-## 📖 참고 자료
-
-- [YOLOv11 공식 문서](https://docs.ultralytics.com/)
-- [YOLOv8 vs YOLOv11 벤치마크](https://github.com/ultralytics/ultralytics)
-- [COCO Dataset](https://cocodataset.org/)
-- [Ultralytics GitHub](https://github.com/ultralytics/ultralytics)
-
----
-
-**마지막 업데이트**: 2024년 11월
